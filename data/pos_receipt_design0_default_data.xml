@@ -1,0 +1,286 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+    <!--
+        Design "Standard / Défaut" — reproduit fidèlement le ticket natif Odoo 18.
+
+        Contraintes du composant dynamique Cybrosys :
+          - setup() vide, AUCUN sous-composant (pas de ReceiptHeader/OrderWidget/Orderline)
+          - PAS de props.formatCurrency
+          - Props disponibles : data, order, receipt, orderlines, paymentlines
+          - "data"    = orderExportForPrinting() = export_for_printing(baseUrl, headerData) [COMPLET]
+          - "receipt" = export_for_printing()    = export_for_printing() sans args [headerData partiel]
+          - On utilise donc props.data.* pour tout (headerData.company inclus)
+          - env.utils.formatCurrency() EST disponible dans l'env OWL du composant dynamique
+
+        Champs export_for_printing utilisés (v18 validé) :
+          props.data.headerData.company.{id,name,phone,vat,email,website,
+                                         point_of_sale_ticket_portal_url_display_mode}
+          props.data.headerData.{cashier, header, trackingNumber}
+          props.data.orderlines[]  — chaque ligne : {productName, price(str),
+                                     qty, unit, unitPrice(str), oldUnitPrice(str),
+                                     discount(str), customerNote, packLotLines[],
+                                     price_without_discount(str)}
+          props.data.taxTotals     — {has_tax_groups, subtotals[], order_total,
+                                     order_rounding, order_sign, same_tax_base}
+          props.data.taxTotals.subtotals[]  — {name, base_amount_currency,
+                                               tax_groups[{group_name,
+                                               tax_amount_currency,
+                                               base_amount_currency, group_label}]}
+          props.data.label_total, label_rounding, label_change, label_discounts
+          props.data.show_rounding, show_change, order_change
+          props.data.paymentlines[] — {name, amount(number), ticket}
+          props.data.total_discount (number)
+          props.data.footer (string)
+          props.data.pos_qr_code (base64 string|falsy)
+          props.data.ticket_code
+          props.data.base_url
+          props.data.shippingDate
+          props.data.name  (order reference)
+          props.data.date  (formatted date string)
+          props.data.generalNote
+
+        Champs incertains / à valider au test navigateur :
+          - props.data.headerData.company.vat_label : absent de getReceiptHeaderData() ;
+            la ReceiptHeader native calcule vatText en JS, ici on affiche "NIF :" en dur
+          - props.data.taxTotals.order_sign : utilisé dans le natif pour montants signés,
+            inclus par sécurité — si undefined (= 1), la multiplication ne change rien
+          - props.data.total_discount : c'est le résultat de get_total_discount(),
+            peut valoir 0.0 (falsy) si aucune remise — le t-if le protège correctement
+    -->
+    <record id="pos_receipt_design_default" model="pos.receipt">
+        <field name="name">Standard / Défaut</field>
+        <field name="design_receipt"><![CDATA[
+<div class="pos-receipt p-2">
+
+    <!-- ===== EN-TÊTE SOCIÉTÉ ===== -->
+    <t t-if="props.data.headerData and props.data.headerData.company">
+        <img t-attf-src="/web/image?model=res.company&amp;id={{ props.data.headerData.company.id }}&amp;field=logo"
+             alt="Logo" class="pos-receipt-logo"/>
+        <br/>
+        <div class="d-flex flex-column align-items-center">
+            <div class="pos-receipt-contact">
+                <div t-if="props.data.headerData.company.name"
+                     t-esc="props.data.headerData.company.name"/>
+                <t t-if="props.data.headerData.company.phone">
+                    <div>Tel:<t t-esc="props.data.headerData.company.phone"/></div>
+                </t>
+                <t t-if="props.data.headerData.company.vat">
+                    <div>NIF : <t t-esc="props.data.headerData.company.vat"/></div>
+                </t>
+                <div t-if="props.data.headerData.company.email"
+                     t-esc="props.data.headerData.company.email"/>
+                <div t-if="props.data.headerData.company.website"
+                     t-esc="props.data.headerData.company.website"/>
+                <div t-if="props.data.headerData.header"
+                     style="white-space:pre-line"
+                     t-esc="props.data.headerData.header"/>
+                <div t-if="props.data.headerData.cashier" class="cashier">
+                    <div>--------------------------------</div>
+                    <div t-esc="props.data.headerData.cashier"/>
+                </div>
+            </div>
+        </div>
+        <br/>
+    </t>
+
+    <!-- ===== LIGNES DE COMMANDE ===== -->
+    <t t-if="props.data.orderlines and props.data.orderlines.length">
+        <ul class="orderlines" style="list-style:none; padding:0; margin:0;">
+            <t t-foreach="props.data.orderlines" t-as="line" t-key="line_index">
+                <li class="orderline" style="padding:4px 0; border-bottom:1px dotted #ccc;">
+                    <div style="display:flex; justify-content:space-between;">
+                        <div class="product-name" style="font-weight:bold; flex:1; padding-right:4px;">
+                            <t t-esc="line.productName"/>
+                        </div>
+                        <div class="product-price" style="font-weight:bold; white-space:nowrap;">
+                            <t t-if="line.price === 'free'">Free</t>
+                            <t t-else="" t-esc="line.price"/>
+                        </div>
+                    </div>
+                    <div style="font-size:0.9em;">
+                        <span style="border:1px solid #ccc; border-radius:3px; padding:0 3px; font-weight:bold;"
+                              t-esc="line.qty"/>
+                        x <t t-esc="line.unitPrice"/>
+                        <t t-if="line.unit"> / <t t-esc="line.unit"/></t>
+                    </div>
+                    <t t-if="line.discount and line.discount !== '0'">
+                        <div style="font-size:0.85em; color:#666;">
+                            <t t-esc="line.price_without_discount"/> With a
+                            <em><t t-esc="line.discount"/>% </em> discount
+                        </div>
+                    </t>
+                    <t t-if="line.customerNote">
+                        <div style="font-size:0.9em; background:#fff3cd; padding:2px 4px; border-radius:3px; margin-top:2px;">
+                            <i class="fa fa-sticky-note"/> <t t-esc="line.customerNote"/>
+                        </div>
+                    </t>
+
+                    <t t-if="line.packLotLines and line.packLotLines.length">
+                        <t t-foreach="line.packLotLines" t-as="lot" t-key="lot_index">
+                            <div style="font-size:0.8em; color:#555;" t-esc="lot"/>
+                        </t>
+                    </t>
+                </li>
+            </t>
+        </ul>
+    </t>
+
+    <!-- ===== NOTE GÉNÉRALE ===== -->
+    <t t-if="props.data.generalNote">
+        <div style="margin-top:4px; font-style:italic; font-size:0.9em;"
+             t-esc="props.data.generalNote"/>
+    </t>
+
+    <!-- ===== TAXES ET TOTAUX ===== -->
+    <t t-set="taxTotals" t-value="props.data.taxTotals"/>
+    <t t-if="taxTotals">
+
+        <t t-if="taxTotals.has_tax_groups">
+            <div class="pos-receipt-taxes">
+                <div class="text-center">--------------------------------</div>
+                <t t-foreach="taxTotals.subtotals" t-as="subtotal" t-key="subtotal_index">
+                    <div style="display:flex; justify-content:space-between;">
+                        <span style="font-weight:bold;" t-esc="subtotal.name"/>
+                        <span t-esc="env.utils.formatCurrency(subtotal.base_amount_currency)"/>
+                    </div>
+                    <t t-foreach="subtotal.tax_groups" t-as="tax_group" t-key="tax_group_index">
+                        <div style="display:flex; justify-content:space-between; padding-left:8px;">
+                            <span>
+                                <t t-esc="tax_group.group_name"/>
+                                <t t-if="taxTotals.same_tax_base === false">
+                                    on <t t-esc="env.utils.formatCurrency(tax_group.base_amount_currency)"/>
+                                </t>
+                            </span>
+                            <span t-esc="env.utils.formatCurrency(tax_group.tax_amount_currency)"/>
+                        </div>
+                    </t>
+                </t>
+            </div>
+        </t>
+
+        <div class="text-center">--------------------------------</div>
+
+        <!-- TOTAL -->
+        <div class="pos-receipt-amount receipt-total"
+             style="display:flex; justify-content:space-between; font-weight:bold; font-size:1.1em;">
+            <t t-out="props.data.label_total"/>
+            <span t-esc="env.utils.formatCurrency((taxTotals.order_sign || 1) * taxTotals.order_total)"/>
+        </div>
+
+        <!-- ARRONDI -->
+        <t t-if="props.data.show_rounding">
+            <div class="pos-receipt-amount receipt-rounding"
+                 style="display:flex; justify-content:space-between;">
+                <t t-out="props.data.label_rounding"/>
+                <span t-esc="env.utils.formatCurrency((taxTotals.order_sign || 1) * taxTotals.order_rounding)"/>
+            </div>
+            <div class="pos-receipt-amount receipt-to-pay"
+                 style="display:flex; justify-content:space-between; font-weight:bold;">
+                <span>To Pay</span>
+                <span t-esc="env.utils.formatCurrency((taxTotals.order_sign || 1) * (taxTotals.order_total + taxTotals.order_rounding))"/>
+            </div>
+        </t>
+
+        <!-- LIGNES DE PAIEMENT -->
+        <t t-foreach="props.data.paymentlines" t-as="line" t-key="line_index">
+            <div class="paymentlines"
+                 style="display:flex; justify-content:space-between; padding-top:2px;">
+                <t t-esc="line.name"/>
+                <span t-esc="env.utils.formatCurrency(line.amount)"/>
+            </div>
+        </t>
+
+        <!-- RENDU DE MONNAIE -->
+        <t t-if="props.data.show_change">
+            <div class="pos-receipt-amount receipt-change"
+                 style="display:flex; justify-content:space-between;">
+                <t t-out="props.data.label_change"/>
+                <span t-esc="env.utils.formatCurrency(props.data.order_change)"/>
+            </div>
+        </t>
+
+        <!-- TOTAL REMISES -->
+        <t t-if="props.data.total_discount">
+            <div class="text-center" style="font-size:0.9em;">
+                <t t-out="props.data.label_discounts"/>
+                <span t-esc="env.utils.formatCurrency(props.data.total_discount)"/>
+            </div>
+        </t>
+
+    </t>
+
+    <div class="before-footer"/>
+    <!-- Emplacement réservé aux modules l10n (l10n_fr_pos_cert, l10n_co_pos, etc.) -->
+    <div class="pos-receipt-order-data"/>
+
+    <!-- ===== QR CODE PORTAIL ===== -->
+    <t t-if="props.data.pos_qr_code">
+        <br/>
+        <div class="pos-receipt-order-data mb-2">Need an invoice for your purchase ?</div>
+    </t>
+    <t t-if="props.data.pos_qr_code and props.data.headerData and props.data.headerData.company">
+        <t t-if="['qr_code', 'qr_code_and_url'].indexOf(props.data.headerData.company.point_of_sale_ticket_portal_url_display_mode) !== -1">
+            <div class="mb-2">
+                <img id="posqrcode" t-att-src="props.data.pos_qr_code" class="pos-receipt-logo"/>
+            </div>
+        </t>
+    </t>
+    <t t-if="props.data.pos_qr_code">
+        <div class="unique-code pos-receipt-order-data">
+            Unique Code: <t t-esc="props.data.ticket_code"/>
+        </div>
+    </t>
+    <t t-if="props.data.pos_qr_code and props.data.headerData and props.data.headerData.company">
+        <t t-if="['url', 'qr_code_and_url'].indexOf(props.data.headerData.company.point_of_sale_ticket_portal_url_display_mode) !== -1">
+            <div class="portal-url pos-receipt-order-data">
+                Portal URL: <t t-esc="props.data.base_url"/>/pos/ticket
+            </div>
+        </t>
+    </t>
+
+    <!-- ===== FOOTER TEXTE ===== -->
+    <t t-if="props.data.footer">
+        <div class="pos-receipt-center-align" style="white-space:pre-line; text-align:center;">
+            <br/>
+            <t t-esc="props.data.footer"/>
+            <br/><br/>
+        </div>
+    </t>
+
+    <!-- ===== TICKETS TERMINAUX DE PAIEMENT ===== -->
+    <div class="after-footer">
+        <t t-if="props.data.paymentlines">
+            <t t-foreach="props.data.paymentlines" t-as="line" t-key="line_index">
+                <t t-if="line.ticket">
+                    <br/>
+                    <div class="pos-payment-terminal-receipt">
+                        <pre t-esc="line.ticket"/>
+                    </div>
+                </t>
+            </t>
+        </t>
+    </div>
+
+    <br/>
+
+    <!-- ===== DATE DE LIVRAISON ===== -->
+    <t t-if="props.data.shippingDate">
+        <div class="pos-receipt-order-data">
+            Expected delivery:
+            <div t-esc="props.data.shippingDate"/>
+        </div>
+    </t>
+
+    <br/>
+
+    <!-- ===== PIED DE PAGE STANDARD ODOO ===== -->
+    <div class="pos-receipt-order-data">
+        <p>Powered by Odoo</p>
+        <div t-esc="props.data.name"/>
+        <div id="order-date" t-esc="props.data.date"/>
+    </div>
+
+</div>
+        ]]></field>
+    </record>
+</odoo>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates id="template" xml:space="preserve">
+    <t t-name="custom_receipts_for_pos.ControlButtonsGeneralNote"
+       t-inherit="point_of_sale.ControlButtons" t-inherit-mode="extension">
+        <xpath expr="//div[hasclass('control-buttons-modal')]" position="inside">
+            <OrderlineNoteButton class="buttonClass"
+                                 label="generalNoteLabel()"
+                                 icon="'fa fa-file-text-o'"/>
+        </xpath>
+    </t>
+</templates>
