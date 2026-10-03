@@ -130,6 +130,13 @@
                     <span style="margin-left:40%;">TOTAL : </span>
                     <span t-esc='env.utils.formatCurrency(props.data.amount_total)' class="pos-receipt-right-align"/>
                 </div>
+                <!-- SOPROMER v18.0.1.0.9 : monnaie rendue (props.data = commande imprimee, OK en reimpression) -->
+                <t t-if="props.data.show_change">
+                    <div class="receipt-change" style="font-weight:700; font-size:14px;">
+                        <span style="margin-left:40%;">RENDU : </span>
+                        <span t-esc='env.utils.formatCurrency(props.data.order_change)' class="pos-receipt-right-align"/>
+                    </div>
+                </t>
                 <br/><br/>
             </div>
             <div class='before-footer' />

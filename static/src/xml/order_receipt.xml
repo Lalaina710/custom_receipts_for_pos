@@ -40,7 +40,7 @@
                                           style="visibility: hidden;">A</span>
                                     <span class="fw-bolder"
                                           t-out="subtotal.name"/>
-                                    <span t-esc="props.formatCurrency(subtotal.base_amount_currency)" class="ms-auto"/>
+                                    <span t-esc="props.formatCurrency(taxTotals.order_sign * subtotal.base_amount_currency)" class="ms-auto"/>
                                 </div>
                                 <div t-foreach="subtotal.tax_groups"
                                      t-as="tax_group" t-key="tax_group_index"
@@ -56,32 +56,41 @@
                                         <span t-esc="tax_group.group_name"/>
                                         <t t-if="!taxTotals.same_tax_base">
                                             on
-                                            <span t-esc="props.formatCurrency(tax_group.base_amount_currency)"/>
+                                            <span t-esc="props.formatCurrency(taxTotals.order_sign * tax_group.base_amount_currency)"/>
                                         </t>
                                     </span>
-                                    <span t-esc="props.formatCurrency(tax_group.tax_amount_currency)"
+                                    <span t-esc="props.formatCurrency(taxTotals.order_sign * tax_group.tax_amount_currency)"
                                           class="ms-auto"/>
                                 </div>
                             </t>
                         </div>
-                        <!--1-->
+                        <!-- SOPROMER v18.0.1.0.10 : montants signes comme le natif
+                             Odoo 18 (taxTotals.order_sign = -1 sur un remboursement :
+                             les taxTotals sont calcules en valeur absolue). Les
+                             sous-totaux HT / TVA sont signes aussi (le natif ne le
+                             fait pas) pour qu'un ticket de remboursement soit
+                             coherent de haut en bas. -->
                         <div class="text-center">--------------------------------</div>
                         <t t-if="taxTotals and taxTotals.order_total !== undefined">
                             <div class="pos-receipt-amount receipt-total">
                                 <t t-out="props.data.label_total"/>
-                                <span t-esc="props.formatCurrency(taxTotals.order_total)"
+                                <span t-esc="props.formatCurrency(taxTotals.order_sign * taxTotals.order_total)"
                                       class="pos-receipt-right-align"/>
                             </div>
                         </t>
-                        <t t-if="taxTotals and 'order_rounding' in taxTotals">
+                        <!-- SOPROMER v18.0.1.0.10 : upstream testait
+                             `'order_rounding' in taxTotals`, toujours vrai en v18
+                             (Arrondi 0,00 + A payer imprimes sur chaque ticket).
+                             Condition et valeurs natives Odoo 18. -->
+                        <t t-if="props.data.show_rounding">
                             <div class="pos-receipt-amount receipt-rounding">
                                 <t t-out="props.data.label_rounding"/>
-                                <span t-esc="props.formatCurrency(taxTotals.order_rounding)"
+                                <span t-esc="props.formatCurrency(taxTotals.order_sign * taxTotals.order_rounding)"
                                       class="pos-receipt-right-align"/>
                             </div>
                             <div class="pos-receipt-amount receipt-to-pay">
                                 To Pay
-                                <span t-esc="props.formatCurrency(taxTotals.total_amount_currency)"
+                                <span t-esc="props.formatCurrency(taxTotals.order_sign * (taxTotals.order_total + taxTotals.order_rounding))"
                                       class="pos-receipt-right-align"/>
                             </div>
                         </t>
@@ -94,10 +103,21 @@
                                   class="pos-receipt-right-align"/>
                         </div>
 
-                        <div t-if="order_change and 'order_change' in taxTotals"
+                        <!-- SOPROMER v18.0.1.0.9 : monnaie rendue (libelle source
+                             anglais "Change given", traduit "Rendu" par i18n/fr.po
+                             depuis v18.0.1.0.10).
+                             Upstream testait `order_change` (variable inexistante
+                             dans le contexte OWL => toujours faux) et lisait
+                             taxTotals.order_change (cle absente en v18) : la ligne
+                             ne s'affichait jamais. On reprend la source native
+                             Odoo 18 (export_for_printing) : show_change =
+                             rendu non nul ET commande finalisee ; valable aussi
+                             en reimpression (TicketScreen), car props.data est
+                             l'export de la commande imprimee. -->
+                        <div t-if="props.data.show_change"
                              class="pos-receipt-amount receipt-change">
-                            <t t-out="props.data.label_change"/>
-                            <span t-esc="props.formatCurrency(taxTotals.order_change)"
+                            Change given
+                            <span t-esc="props.formatCurrency(props.data.order_change)"
                                   class="pos-receipt-right-align"/>
                         </div>
                         <!-- Extra Payment Info -->
